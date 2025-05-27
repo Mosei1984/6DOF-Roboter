@@ -1,21 +1,5 @@
-<think>I need to create a comprehensive README.md file for the RoboterArm project. I'll include details about:
 
-1. Overview of the project
-2. Key components and their relationships
-3. Main classes and their purposes
-4. Important variables and functions
-5. How to use the system
-6. Technical details
 
-From the code I've seen, the project appears to be a 6-DoF robot arm control system with:
-- Kinematics handling (forward and inverse kinematics)
-- Trajectory planning
-- Multiple drive modes
-- Sensor integration (ADXL accelerometer, VL53L0X distance sensor)
-- Configuration management
-- Menu-based user interface
-
-I'll organize the README to cover all these aspects in a clear, structured way.</think>
 # RoboterArm - 6DOF Robot Control System
 
 ## Übersicht / Overview
