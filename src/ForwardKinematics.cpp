@@ -74,7 +74,6 @@ void updateForwardKinematicsDisplay(
 // Forward Kinematics Mode implementation
 void initForwardKinematicsMode(U8G2* display) {
     // Initialize display pointer
-    Serial.println("Forward Kinematics Mode Initialized");
   
     // Reset variables
     for (int i = 0; i < 3; i++) {
@@ -129,8 +128,6 @@ void handleForwardKinematicsMode() {
             } else if (joystick_ryaw < joyRYawCenter - 200) {
                 activeMotor = (activeMotor + 5) % 6; // +5 = -1 mod 6
             }
-            Serial.print("FK Mode: Selected joint ");
-            Serial.println(activeMotor + 1);
             lastJoystickCheck = millis();
         }
     }
