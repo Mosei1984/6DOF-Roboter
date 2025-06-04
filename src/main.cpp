@@ -57,8 +57,6 @@ extern unsigned long lastJoystickCheck;
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0);
 
 
-// Debug variable placeholder
-
 // --- ISR für jitter-freie STEP-Impulse ---
 void stepISR() {
   updateSteppers();
@@ -101,10 +99,7 @@ void enableMotors(bool enable);
 void resetMotorSettings();
 float calculateSpeedFromJoystick(int joystickValue, int centerValue);
 void readJoystickValues();
-void updateDisplay();
-void processMotorCommand(int motorIndex, String params);
-void updateHomingDisplay();
-void processSerialCommand(String command);
+
 
 void setup() {
   Serial.begin(115200);
@@ -196,12 +191,7 @@ void loop() {
   // Read button inputs
   readInputs();
    // Update gripper position from potentiometer
-  updateGripperFromPotentiometer();
-  // Process serial commands
-  if (Serial.available()) {
-    String command = Serial.readStringUntil('\n');
-    processSerialCommand(command);
-  }
+
   
   // Process mode selection
   if (buttonModePressed) {
@@ -761,11 +751,6 @@ float stepsToDegree(int jointIndex, long steps) {
     static_cast<float>((BASE_STEPS * gearRatios[5]) / 360.0)   // Joint 6 (tool roll)
   };
   
-  return steps / STEPS_PER_DEGREE[jointIndex];
-}
-
-void processSerialCommand(String command) {
-  command.trim();
     
     // Parse commands in format M[motor] [value]
     // Example: "M1 1000" to move motor 1 to position 1000
