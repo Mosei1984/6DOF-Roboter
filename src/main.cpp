@@ -104,6 +104,7 @@ void readJoystickValues();
 void updateDisplay();
 void processMotorCommand(int motorIndex, String params);
 void updateHomingDisplay();
+void processSerialCommand(String command);
 
 void setup() {
   Serial.begin(115200);
@@ -197,6 +198,10 @@ void loop() {
    // Update gripper position from potentiometer
   updateGripperFromPotentiometer();
   // Process serial commands
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    processSerialCommand(command);
+  }
   
   // Process mode selection
   if (buttonModePressed) {
@@ -759,7 +764,8 @@ float stepsToDegree(int jointIndex, long steps) {
   return steps / STEPS_PER_DEGREE[jointIndex];
 }
 
-    command.trim();
+void processSerialCommand(String command) {
+  command.trim();
     
     // Parse commands in format M[motor] [value]
     // Example: "M1 1000" to move motor 1 to position 1000
