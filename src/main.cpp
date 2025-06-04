@@ -34,15 +34,6 @@ long          multiTargetSteps[6];
 IntervalTimer stepTimer;
 volatile uint8_t activeMotor = 0;
 
-enum Mode {
-  MODE_INDIVIDUAL_MOTOR,
-  MODE_JOINT_CONTROL,
-  MODE_HOMING,
-  MODE_SERVO_TEST,
-  MODE_FORWARD_KINEMATICS,
-  MODE_INVERSE_KINEMATICS,
-  MODE_COUNT
-};
 
 Mode    currentMode         = MODE_INDIVIDUAL_MOTOR;
 bool    buttonModePressed   = false;
@@ -66,116 +57,20 @@ extern unsigned long lastJoystickCheck;
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0);
 
 
-double startPosition[6], targetPosition[6];
-// Cartesian position tracking for IK
-
-// Debug variables
-bool movementStarted = false;
-unsigned long lastProgressOutput = 0;
-unsigned long lastMotorDebug = 0;
+// Debug variable placeholder
 
 // --- ISR für jitter-freie STEP-Impulse ---
 void stepISR() {
-  if (currentMode == MODE_INDIVIDUAL_MOTOR) {
-    motors[activeMotor].runSpeed();
-  } else if (currentMode == MODE_JOINT_CONTROL) {
-    for (int i = 0; i < 6; i++) {
-      if (abs(motors[i].speed()) > 0.01) motors[i].runSpeed();
-    }
-  } else if (currentMode == MODE_HOMING && homing) {
-    for (int i = 0; i < 6; i++) {
-      if (digitalRead(ENDSTOP_PINS[i]) == HIGH && abs(motors[i].speed()) > 0.01)
-        motors[i].runSpeed();
-    }
-  } else if (currentMode == MODE_FORWARD_KINEMATICS || currentMode == MODE_INVERSE_KINEMATICS) {
-    // Enhanced handling for FK and IK modes
-    if (coordMoveActive) {
-      // Mark that movement has started
-      if (!movementStarted) {
-        movementStarted = true;
-        Serial.println("Motor movement started in IK mode");
-      }
-      
-      // For coordinated movements, update positions based on elapsed time
-      unsigned long elapsedTime = millis() - coordMoveStartTime;
-      
-      // Output progress occasionally
-      if (millis() - lastProgressOutput > 500) {
-        lastProgressOutput = millis();
-        Serial.print("IK movement progress: ");
-        Serial.print((elapsedTime * 100) / coordMoveDuration);
-        Serial.println("%");
-      }
-      
-      if (elapsedTime >= coordMoveDuration) {
-        // Movement complete
-        coordMoveActive = false;
-        for (int i = 0; i < 6; i++) {
-          motors[i].setSpeed(0);
-        }
-        Serial.println("Coordinated movement complete");
-        movementStarted = false;
-      } else {
-        // Calculate progress (0.0 to 1.0) with ease-in/ease-out
-        float progress = (float)elapsedTime / coordMoveDuration;
-        
-        // Apply an ease-in/ease-out curve for smoother motion
-        float smoothProgress = sin(progress * PI - PI/2) * 0.5 + 0.5;
-        
-        // Check if any motor needs to move
-        bool anyMotorMoving = false;
-        
-        // Update motor positions for coordinated movement
-        for (int i = 0; i < 6; i++) {
-          long currentTarget = startPosition[i] + (targetPosition[i] - startPosition[i]) * smoothProgress;
-          long stepsToGo = currentTarget - motors[i].currentPosition();
-          
-          if (abs(stepsToGo) > 0) {
-            anyMotorMoving = true;
-            
-            // Calculate required speed to reach target at this instant
-            // Ensure speed doesn't exceed max speed but also isn't too small
-            float requiredSpeed = constrain(stepsToGo * 50.0, -MAX_SPEED, MAX_SPEED);
-            
-            // Ensure minimum speed for very small movements
-            if (abs(requiredSpeed) < MIN_PRACTICAL_SPEED && abs(requiredSpeed) > 0.1) {
-              requiredSpeed = (requiredSpeed > 0) ? MIN_PRACTICAL_SPEED : -MIN_PRACTICAL_SPEED;
-            }
-            
-            motors[i].setSpeed(requiredSpeed);
-            motors[i].runSpeed();
-          }
-        }
-        
-        // If no motor is moving, consider the move complete
-        if (!anyMotorMoving) {
-          coordMoveActive = false;
-          Serial.println("Coordinated movement complete (no motors moving)");
-          movementStarted = false;
-        }
-      }
-    } else {
-      // When not in coordinated move, behave like joint control
-      for (int i = 0; i < 6; i++) {
-        if (abs(motors[i].speed()) > 0.01) motors[i].runSpeed();
-      }
-    }
-  }
+  updateSteppers();
 }
 
 // Add this function to start a coordinated movement for IK/FK modes
 void startCoordinatedMove(double targetJointAngles[6], unsigned long duration) {
-  Serial.println("Starting coordinated move...");
-  Serial.println("Target angles (degrees):");
   int servoPos = map(analogRead(SERVO_POTTY_PIN), 0, 1023, SERVO_MIN_POS, SERVO_MAX_POS);
   gripper.write(servoPos);
   // Convert joint angles to motor steps
   for (int i = 0; i < 6; i++) {
     double targetDegrees = targetJointAngles[i] * 180.0 / M_PI;
-    Serial.print("Joint ");
-    Serial.print(i+1);
-    Serial.print(": ");
-    Serial.println(targetDegrees);
     
     // Calculate target steps using steps-per-degree conversion
     float stepsPerDegree = (BASE_STEPS * gearRatios[i]) / 360.0;
@@ -186,23 +81,14 @@ void startCoordinatedMove(double targetJointAngles[6], unsigned long duration) {
     coordMoveTargetSteps[i] = targetSteps;
     
     // Debug info
-    Serial.print("Joint ");
-    Serial.print(i+1);
-    Serial.print(" needs to move ");
-    Serial.print(coordMoveTargetSteps[i] - coordMoveStartSteps[i]);
-    Serial.println(" steps");
   }
   
   // Set up timing
   coordMoveStartTime = millis();
   coordMoveDuration = duration;
-  Serial.print("Movement will take ");
-  Serial.print(coordMoveDuration);
-  Serial.println(" milliseconds");
   
   // Activate coordinated movement
   coordMoveActive = true;
-  Serial.println("Motor movement started in IK mode");
 }
 
 // Function prototypes
@@ -216,15 +102,13 @@ void resetMotorSettings();
 float calculateSpeedFromJoystick(int joystickValue, int centerValue);
 void readJoystickValues();
 void updateDisplay();
-void processSerialCommands();
 void processMotorCommand(int motorIndex, String params);
 void updateHomingDisplay();
+void processSerialCommand(String command);
 
 void setup() {
-  // Serielle Debug-Ausgabe
   Serial.begin(115200);
   delay(200);
-  Serial.println("6DOF Robot Controller Starting...");
   displayPtr = &u8g2;
   // --- Joystick kalibrieren (Mittelwert aus 20 Messungen) ---
   long sumLX = 0, sumLY = 0, sumRZ = 0, sumRYaw = 0;
@@ -241,11 +125,6 @@ void setup() {
   joyRZCenter = sumRZ / 20;
   joyRYawCenter = sumRYaw / 20;
   
-  Serial.println("Joystick calibration complete:");
-  Serial.print("LX center: "); Serial.println(joyLXCenter);
-  Serial.print("LY center: "); Serial.println(joyLYCenter);
-  Serial.print("RZ center: "); Serial.println(joyRZCenter);
-  Serial.print("RYaw center: "); Serial.println(joyRYawCenter);
   
   // Initialize smoothing arrays
   for (int i = 0; i < JOYSTICK_SMOOTHING; i++) {
@@ -286,7 +165,6 @@ void setup() {
   multiStepperGroup.addStepper(motors[4]);
   multiStepperGroup.addStepper(motors[5]);
   
-  Serial.println("MultiStepper group initialized");
   
   // Initialize servo
   gripper.attach(SERVO_PIN);
@@ -308,7 +186,6 @@ void setup() {
   // --- Timer starten: alle 20 µs → bis 50 kHz Flankenrate ---
   stepTimer.begin(stepISR, 20);
   
-    Serial.println("Initialization complete");
   delay(500);
 }
 
@@ -321,14 +198,15 @@ void loop() {
    // Update gripper position from potentiometer
   updateGripperFromPotentiometer();
   // Process serial commands
-  processSerialCommands();
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    processSerialCommand(command);
+  }
   
   // Process mode selection
   if (buttonModePressed) {
     currentMode = static_cast<Mode>((static_cast<int>(currentMode) + 1) % MODE_COUNT);
     buttonModePressed = false;
-    Serial.print("Mode changed to: ");
-    Serial.println(currentMode);
     resetMotorSettings();
   }
   
@@ -365,7 +243,6 @@ void loop() {
       
       // Check if it took too long
       if (millis() - ikStartTime > 500) {
-        Serial.println("IK processing taking too long");
       }
       break;
     case MODE_COUNT:
@@ -435,8 +312,6 @@ void readInputs() {
     // Otherwise, if in individual motor mode, cycle motors
     else if (currentMode == MODE_INDIVIDUAL_MOTOR && clickCount == 1) {
       activeMotor = (activeMotor + 1) % 6;
-      Serial.print("Switched to motor: ");
-      Serial.println(activeMotor + 1);
     }
   }
   
@@ -487,8 +362,6 @@ void handleMotorControl() {
   if (buttonConfirmPressed) {
     motors[activeMotor].setCurrentPosition(0);
     buttonConfirmPressed = false;
-    Serial.print("Position reset for motor: ");
-    Serial.println(activeMotor + 1);
   }
   
   // Calculate speed from joystick position
@@ -523,7 +396,6 @@ void handleJointControl() {
       motors[i].setCurrentPosition(0);
     }
     buttonConfirmPressed = false;
-    Serial.println("All positions reset");
   }
   
   currentSpeed = max(abs(speedX), max(abs(speedY), max(abs(speedZ), abs(speedYaw))));
@@ -539,10 +411,8 @@ void handleHoming() {
     buttonConfirmPressed = false;
     
     if (homing) {
-      Serial.println("Starting homing sequence");
       startHoming();
     } else {
-      Serial.println("Homing stopped");
       stopHoming();
     }
   }
@@ -554,7 +424,6 @@ void handleHoming() {
     // Check if all homing is complete
     if (isHomingComplete()) {
       homing = false;
-      Serial.println("All axes homed");
       moveToHomePose();  
 
     }
@@ -692,8 +561,6 @@ void enableMotors(bool enable) {
   for (int i = 0; i < 6; i++) {
     digitalWrite(ENABLE_PINS[i], enable ? LOW : HIGH); // LOW active
   }
-  Serial.print("Motors ");
-  Serial.println(enable ? "enabled" : "disabled");
 }
 
 void resetMotorSettings() {
@@ -897,10 +764,8 @@ float stepsToDegree(int jointIndex, long steps) {
   return steps / STEPS_PER_DEGREE[jointIndex];
 }
 
-void processSerialCommands() {
-  if (Serial.available() > 0) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
+void processSerialCommand(String command) {
+  command.trim();
     
     // Parse commands in format M[motor] [value]
     // Example: "M1 1000" to move motor 1 to position 1000
@@ -911,7 +776,6 @@ void processSerialCommands() {
         String params = command.substring(3);
         processMotorCommand(motorIndex, params);
       } else {
-        Serial.println("Error: Invalid motor index");
       }
     }
     // Parse IK commands in format IK X Y Z R P Y
@@ -943,16 +807,16 @@ void processSerialCommands() {
         };
         
         // Call the moveToCartesianTarget function (defined in InverseKinematics.cpp)
-        bool success = moveToCartesianTarget(targetPos, targetRot, 2000);
-        
-        if (success) {
-          Serial.println("IK solution found, movement started");
+          bool success = moveToCartesianTarget(targetPos, targetRot, 2000);
+
+          if (success) {
+            Serial.println("IK solution found, movement started");
+          } else {
+            Serial.println("No valid IK solution for this target");
+          }
         } else {
-          Serial.println("No valid IK solution for this target");
+          Serial.println("Error: IK command requires 6 values (X Y Z Roll Pitch Yaw)");
         }
-      } else {
-        Serial.println("Error: IK command requires 6 values (X Y Z Roll Pitch Yaw)");
-      }
     }
     // Parse FK command to request current position
     else if (command == "FK") {
@@ -964,23 +828,24 @@ void processSerialCommands() {
       }
       
       double currentPos[3], currentRot[3];
-      calculateForwardKinematics(jointAnglesRad, currentPos, currentRot);
-      
-      // Return current position and orientation
-      Serial.print("Position: X=");
-      Serial.print(currentPos[0], 4);
-      Serial.print(" Y=");
-      Serial.print(currentPos[1], 4);
-      Serial.print(" Z=");
-      Serial.println(currentPos[2], 4);
-      
-      Serial.print("Orientation: Roll=");
-      Serial.print(currentRot[0] * 180.0 / M_PI, 1);
-      Serial.print(" Pitch=");
-      Serial.print(currentRot[1] * 180.0 / M_PI, 1);
-      Serial.print(" Yaw=");
-      Serial.println(currentRot[2] * 180.0 / M_PI, 1);
-    }
+        calculateForwardKinematics(jointAnglesRad, currentPos, currentRot);
+
+        // Return current position and orientation
+        Serial.print("Position: X=");
+        Serial.print(currentPos[0], 4);
+        Serial.print(" Y=");
+        Serial.print(currentPos[1], 4);
+        Serial.print(" Z=");
+        Serial.println(currentPos[2], 4);
+
+        Serial.print("Orientation: Roll=");
+        Serial.print(currentRot[0] * 180.0 / M_PI, 1);
+        Serial.print(" Pitch=");
+        Serial.print(currentRot[1] * 180.0 / M_PI, 1);
+        Serial.print(" Yaw=");
+        Serial.println(currentRot[2] * 180.0 / M_PI, 1);
+
+      }
     // Parse HOME command to start homing
     else if (command == "HOME") {
       if (currentMode != MODE_HOMING) {
@@ -989,7 +854,6 @@ void processSerialCommands() {
       }
       homing = true;
       startHoming();
-      Serial.println("Homing started via serial command");
     }
     // Parse STOP command to stop all motors
     else if (command == "STOP") {
@@ -998,10 +862,8 @@ void processSerialCommands() {
         motors[i].stop();
       }
       coordMoveActive = false;
-      Serial.println("Emergency stop triggered");
     }
     else {
-      Serial.println("Unknown command");
     }
   }
 }
@@ -1013,42 +875,24 @@ void processMotorCommand(int motorIndex, String params) {
   // Move to absolute position: M1 1000
   if (params.length() > 0 && (isdigit(params[0]) || params[0] == '-')) {
     long targetPosition = params.toInt();
-    Serial.print("Moving motor ");
-    Serial.print(motorIndex + 1);
-    Serial.print(" to position ");
-    Serial.println(targetPosition);
     
     motors[motorIndex].moveTo(targetPosition);
     motors[motorIndex].setSpeed(DEFAULT_MAX_SPEED * (motors[motorIndex].distanceToGo() > 0 ? 1 : -1));
   }
   // Reset position: M1 R
   else if (params.startsWith("R")) {
-    Serial.print("Resetting position for motor ");
-    Serial.println(motorIndex + 1);
     motors[motorIndex].setCurrentPosition(0);
   }
   // Set speed: M1 S500
     // Set speed: M1 S500
   else if (params.startsWith("S")) {
     float speed = params.substring(1).toFloat();
-    Serial.print("Setting speed for motor ");
-    Serial.print(motorIndex + 1);
-    Serial.print(" to ");
-    Serial.println(speed);
     motors[motorIndex].setSpeed(speed);
   }
   // Get position: M1 ?
   else if (params == "?") {
-    Serial.print("Motor ");
-    Serial.print(motorIndex + 1);
-    Serial.print(" position: ");
-    Serial.print(motors[motorIndex].currentPosition());
-    Serial.print(" steps (");
-    Serial.print(stepsToDegree(motorIndex, motors[motorIndex].currentPosition()));
-    Serial.println(" degrees)");
   }
   else {
-    Serial.println("Invalid motor command");
   }
 }
  

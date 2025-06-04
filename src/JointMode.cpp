@@ -169,21 +169,6 @@ void readDirectJoysticks() {
   // Gerundeten geglätteten Wert für die weitere Verarbeitung verwenden
   joystickLeftY = round(smoothedJoystickY);
   
-  // Debug-Ausgabe bei Bedarf
-  static unsigned long lastDebugTime = 0;
-  if (millis() - lastDebugTime > 2000) { // Alle 2 Sekunden
-    Serial.print("Joystick Werte: L-X=");
-    Serial.print(joystickLeftX);
-    Serial.print(" L-Y (geglättet)=");
-    Serial.print(joystickLeftY);
-    Serial.print(" (raw=");
-    Serial.print(rawLeftY);
-    Serial.print(") R-Z=");
-    Serial.print(joystickRightZ);
-    Serial.print(" R-YAW=");
-    Serial.println(joystickRightYaw);
-    lastDebugTime = millis();
-  }
 }
 
 void readDirectButtons() {
@@ -205,15 +190,8 @@ void readDirectButtons() {
       buttonFeedbackStartTime = millis();
       setAllPixels(COLOR_BLUE);
       
-      // Debug ausgeben
-      if (axisConfirmed) {
-        Serial.print("Achse ");
-        Serial.print(selectedAxis + 1);
-        Serial.println(" bestätigt - bereit zum Verfahren");
-      } else {
-        Serial.println("Auswahl zurückgesetzt - wähle neue Achse");
-        
-        // Alle Motoren stoppen
+      // Alle Motoren stoppen, wenn Auswahl aufgehoben
+      if (!axisConfirmed) {
         stopAllSteppers();
       }
     } else {
@@ -275,9 +253,6 @@ void initJointMode(U8G2* display) {
   pinMode(BUTTON_CONFIRM, INPUT_PULLUP);
   prevButtonConfirmState = digitalRead(BUTTON_CONFIRM);
   
-  Serial.println("🚀 Joint Mode initialisiert mit MAXIMALER GESCHWINDIGKEIT");
-  Serial.println("🎮 Direkte Joystick-Steuerung aktiviert");
-  Serial.println("💡 NeoPixel-LEDs aktiviert");
   
   // Anfangs-LED-Zustand wird in handleJointMode gesetzt, sobald die Initialsequenz abgeschlossen ist
   lastStepperUpdateTime = micros();
@@ -333,11 +308,7 @@ void handleJointMode() {
     
     // Nur eine Iteration pro Aufruf (non-blocking)
     if (updateCounter < MOTOR_UPDATES_PER_LOOP) {
-      for (int i = 0; i < 6; i++) { // Nur die 6 physischen Stepper-Motoren
-        if (abs(currentmotorspeeds[i]) > 0) {
-          motors[i].runSpeed(); // Führe runSpeed aus
-        }
-      }
+      updateSteppers();
       updateCounter++;
     } else {
       updateCounter = 0; // Reset für nächsten Loop
@@ -373,8 +344,6 @@ void handleAxisSelection() {
     if (yawValue > 700) { // nach oben
       if (selectedAxis < 6) { // Maximal Achse 7 (Index 6)
         selectedAxis++;
-        Serial.print("Nächste Achse: ");
-        Serial.println(selectedAxis + 1);
         
         // LED-Feedback (non-blocking)
         if (selectedAxis < NUM_PIXELS) {
@@ -388,8 +357,6 @@ void handleAxisSelection() {
     else if (yawValue < 300) { // nach unten
       if (selectedAxis > 0) {
         selectedAxis--;
-        Serial.print("Vorherige Achse: ");
-        Serial.println(selectedAxis + 1);
         
         // LED-Feedback (non-blocking)
         if (selectedAxis < NUM_PIXELS) {
@@ -454,18 +421,6 @@ void handleAxisMovement() {
         currentmotorspeeds[selectedAxis] = 0;
       }
       
-      // Debug für die Geschwindigkeit
-      static unsigned long lastSpeedDebug = 0;
-      static float lastSpeed = -9999;
-      
-      if (millis() - lastSpeedDebug > 200 && abs(lastSpeed - currentmotorspeeds[selectedAxis]) > 100) {
-        Serial.print("Achse ");
-        Serial.print(selectedAxis + 1);
-        Serial.print(" - Geschwindigkeit: ");
-        Serial.println(currentmotorspeeds[selectedAxis]);
-        lastSpeed = currentmotorspeeds[selectedAxis];
-        lastSpeedDebug = millis();
-      }
     }
     
     // Geschwindigkeit direkt auf den Stepper anwenden
@@ -515,14 +470,6 @@ void updateJointMode() {
   if (startIdx < 0) startIdx = 0;
   if (startIdx > totalAxes - visibleAxes) startIdx = totalAxes - visibleAxes;
   
-  // DEBUG: Ausgabe der Anzeigegrenzen
-  Serial.print("Display range: ");
-  Serial.print(startIdx + 1);
-  Serial.print("-");
-  Serial.print(startIdx + visibleAxes);
-  Serial.print(" (selected: ");
-  Serial.print(selectedAxis + 1);
-  Serial.println(")");
   
   // Zeichne Aufwärtspfeil wenn es Achsen vor dem Anzeigebereich gibt
   if (startIdx > 0) {
