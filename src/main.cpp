@@ -54,6 +54,7 @@ int   joystick_lx, joystick_ly, joystick_rz, joystick_ryaw;
 extern unsigned long lastJoystickCheck;
 // --- 4) Servo & Display ---
 
+
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0);
 
 
@@ -63,6 +64,14 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0);
 void stepISR() {
   updateSteppers();
 }
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0);
+
+
+// --- ISR für jitter-freie STEP-Impulse ---
+void stepISR() {
+  updateSteppers();
+}
+
 
 // Add this function to start a coordinated movement for IK/FK modes
 void startCoordinatedMove(double targetJointAngles[6], unsigned long duration) {
@@ -101,6 +110,7 @@ void enableMotors(bool enable);
 void resetMotorSettings();
 float calculateSpeedFromJoystick(int joystickValue, int centerValue);
 void readJoystickValues();
+
 void updateDisplay();
 void processMotorCommand(int motorIndex, String params);
 void updateHomingDisplay();
@@ -110,6 +120,12 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   displayPtr = &u8g2;
+
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+  displayPtr = &u8g2;
+
   // --- Joystick kalibrieren (Mittelwert aus 20 Messungen) ---
   long sumLX = 0, sumLY = 0, sumRZ = 0, sumRYaw = 0;
   for (int i = 0; i < 20; i++) {
@@ -124,7 +140,6 @@ void setup() {
   joyLYCenter = sumLY / 20;
   joyRZCenter = sumRZ / 20;
   joyRYawCenter = sumRYaw / 20;
-  
   
   // Initialize smoothing arrays
   for (int i = 0; i < JOYSTICK_SMOOTHING; i++) {
@@ -196,13 +211,14 @@ void loop() {
   // Read button inputs
   readInputs();
    // Update gripper position from potentiometer
+
   updateGripperFromPotentiometer();
   // Process serial commands
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     processSerialCommand(command);
   }
-  
+
   // Process mode selection
   if (buttonModePressed) {
     currentMode = static_cast<Mode>((static_cast<int>(currentMode) + 1) % MODE_COUNT);
@@ -761,11 +777,13 @@ float stepsToDegree(int jointIndex, long steps) {
     static_cast<float>((BASE_STEPS * gearRatios[5]) / 360.0)   // Joint 6 (tool roll)
   };
   
+
   return steps / STEPS_PER_DEGREE[jointIndex];
 }
 
 void processSerialCommand(String command) {
   command.trim();
+
     
     // Parse commands in format M[motor] [value]
     // Example: "M1 1000" to move motor 1 to position 1000
@@ -807,6 +825,7 @@ void processSerialCommand(String command) {
         };
         
         // Call the moveToCartesianTarget function (defined in InverseKinematics.cpp)
+
           bool success = moveToCartesianTarget(targetPos, targetRot, 2000);
 
           if (success) {
@@ -817,6 +836,18 @@ void processSerialCommand(String command) {
         } else {
           Serial.println("Error: IK command requires 6 values (X Y Z Roll Pitch Yaw)");
         }
+
+          bool success = moveToCartesianTarget(targetPos, targetRot, 2000);
+
+          if (success) {
+            Serial.println("IK solution found, movement started");
+          } else {
+            Serial.println("No valid IK solution for this target");
+          }
+        } else {
+          Serial.println("Error: IK command requires 6 values (X Y Z Roll Pitch Yaw)");
+        }
+
     }
     // Parse FK command to request current position
     else if (command == "FK") {
@@ -846,6 +877,26 @@ void processSerialCommand(String command) {
         Serial.println(currentRot[2] * 180.0 / M_PI, 1);
 
       }
+
+        calculateForwardKinematics(jointAnglesRad, currentPos, currentRot);
+
+        // Return current position and orientation
+        Serial.print("Position: X=");
+        Serial.print(currentPos[0], 4);
+        Serial.print(" Y=");
+        Serial.print(currentPos[1], 4);
+        Serial.print(" Z=");
+        Serial.println(currentPos[2], 4);
+
+        Serial.print("Orientation: Roll=");
+        Serial.print(currentRot[0] * 180.0 / M_PI, 1);
+        Serial.print(" Pitch=");
+        Serial.print(currentRot[1] * 180.0 / M_PI, 1);
+        Serial.print(" Yaw=");
+        Serial.println(currentRot[2] * 180.0 / M_PI, 1);
+
+      }
+
     // Parse HOME command to start homing
     else if (command == "HOME") {
       if (currentMode != MODE_HOMING) {
