@@ -305,80 +305,11 @@ void initInverseKinematicsMode(U8G2* display) {
 }
 
 void handleInverseKinematicsMode() {
-  static bool manualControl = false;
-  static int activeJoint = 0;
   
   // Update gripper from potentiometer (centralized control)
   updateGripperFromPotentiometer();
   
-  // Toggle between IK mode and manual joint control with double-click
-  if (buttonConfirmPressed) {
-    static unsigned long lastPressTime = 0;
-    static int pressCount = 0;
-    
-    unsigned long now = millis();
-    if (now - lastPressTime < 500) {
-      // Double press detected
-      pressCount++;
-      if (pressCount >= 2) {
-        manualControl = !manualControl;
-        pressCount = 0;
-        Serial.print(manualControl ? "Manual joint control activated" : "IK mode activated");
-        Serial.print(" - Active joint: ");
-        Serial.println(activeJoint + 1);
-      }
-    } else {
-      pressCount = 1;
-    }
-    lastPressTime = now;
-  }
-  
-  if (manualControl) {
-    // Manual joint control mode
-    // Use right joystick to select joint
-    if (abs(joystick_ryaw - joyRYawCenter) > 300) {
-      static unsigned long lastJointChange = 0;
-      if (millis() - lastJointChange > 300) {
-        if (joystick_ryaw > joyRYawCenter) {
-          activeJoint = (activeJoint + 1) % 6;
-        } else {
-          activeJoint = (activeJoint + 5) % 6;
-        }
-        Serial.print("Selected joint: ");
-        Serial.println(activeJoint + 1);
-        lastJointChange = millis();
-      }
-    }
-    
-    // Use left joystick to move the joint
-    int speed = map(joystick_ly, 0, 1023, -MAX_SPEED, MAX_SPEED);
-    if (abs(speed) < MIN_PRACTICAL_SPEED) speed = 0;
-    
-    motors[activeJoint].setSpeed(speed);
-    
-    // Display manual control status
-    displayPtr->clearBuffer();
-    displayPtr->setFont(u8g2_font_6x10_tf);
-    displayPtr->drawFrame(0, 0, 128, 12);
-    displayPtr->drawStr(4, 10, "Manual Joint Control");
-    
-    displayPtr->setCursor(0, 24);
-    displayPtr->print("Joint ");
-    displayPtr->print(activeJoint + 1);
-    displayPtr->print(": ");
-    displayPtr->print(stepsToDegree(activeJoint, motors[activeJoint].currentPosition()));
-    displayPtr->print("deg");
-    
-    displayPtr->setCursor(0, 36);
-    displayPtr->print("Speed: ");
-    displayPtr->print(speed);
-    
-    displayPtr->setCursor(0, 48);
-    displayPtr->print("Double-press to exit");
-    
-    displayPtr->sendBuffer();
-    return;
-  }
+  // No manual control mode – joystick always modifies cartesian target
   
   // Only process joystick input if not in a coordinated move
   if (!coordMoveActive) {
@@ -408,7 +339,6 @@ void handleInverseKinematicsMode() {
     
     // If confirm button is pressed, calculate IK and move
     if (buttonConfirmPressed) {
-      Serial.println("Confirm button pressed in IK mode");
       
       // Start a direct cartesian movement to target
       bool success = moveToCartesianTarget(currentTargetPos, currentTargetRot, 2000);
@@ -419,9 +349,6 @@ void handleInverseKinematicsMode() {
         displayPtr->drawStr(0, 12, "IK solution found");
         displayPtr->drawStr(0, 24, "Executing motion...");
         displayPtr->sendBuffer();
-        
-        // Set flag to show we're moving
-        Serial.println("IK movement started");
       } else {
         displayPtr->clearBuffer();
         displayPtr->setFont(u8g2_font_ncenB08_tr);
@@ -433,16 +360,6 @@ void handleInverseKinematicsMode() {
       
       // Reset button state
       buttonConfirmPressed = false;
-    }
-  } else {
-    // If we're in a coordinated move, print status every second
-    static unsigned long lastStatusTime = 0;
-    if (millis() - lastStatusTime > 1000) {
-      lastStatusTime = millis();
-      Serial.print("Coordinated move active: ");
-      unsigned int percentComplete = (unsigned int)((millis() - coordMoveStartTime) * 100 / coordMoveDuration);
-      Serial.print(percentComplete);
-      Serial.println("% complete");
     }
   }
   

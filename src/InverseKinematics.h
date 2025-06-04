@@ -45,4 +45,4 @@ extern double cartesianStartPos[3];
 extern double cartesianTargetPos[3];
 extern double cartesianStartRot[3];
 extern double cartesianTargetRot[3];
-void startCoordinatedMove(double targetJointAngles[6], unsigned long duration);
+

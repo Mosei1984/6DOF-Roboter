@@ -1,5 +1,6 @@
   // Homing.cpp
-  #include "Homing.h"
+#include "Homing.h"
+#include "StepperControl.h"
   
 
 
@@ -20,7 +21,6 @@
   bool allHomingComplete = false;
 
   void initHomingMode() {
-    Serial.println("Initializing Homing Mode");
   
     // Reset all homing states
     for (int i = 0; i < 6; i++) {
@@ -37,19 +37,14 @@
   }
 
   void startHoming() {
-    Serial.println("Starting homing sequence for all enabled axes");
   
     // Initialize homing for all enabled axes
     for (int i = 0; i < 6; i++) {
       if (HOMING_ENABLED[i]) {
         axisHomingState[i] = HomingState::FAST_APPROACH;
         homingStartTime[i] = millis();
-        Serial.print("Starting homing for axis ");
-        Serial.println(i + 1);
       } else {
         axisHomingState[i] = HomingState::COMPLETED; // Skip disabled axes
-        Serial.print("Skipping homing for disabled axis ");
-        Serial.println(i + 1);
       }
     }
   
@@ -83,8 +78,6 @@
           axisHomingState[i] != HomingState::ERROR) {
       
         if (millis() - homingStartTime[i] > homingTimeout) {
-          Serial.print("Homing timeout for axis ");
-          Serial.println(i + 1);
           axisHomingState[i] = HomingState::ERROR;
           motors[i].setSpeed(0);
           continue;
@@ -102,12 +95,10 @@
         
           // Set fast homing speed (direction based on configuration)
           motors[i].setSpeed(HOMING_DIRECTION[i] ? HOMING_FAST_SPEED : -HOMING_FAST_SPEED);
-          motors[i].runSpeed();
+          updateSteppers();
         
           // Check if endstop is hit - FIXED for NC wiring
           if (digitalRead(ENDSTOP_PINS[i]) == HIGH) { // Endstop hit
-            Serial.print("Fast approach completed for axis ");
-            Serial.println(i + 1);
           
             // Stop motor
             motors[i].setSpeed(0);
@@ -127,11 +118,9 @@
           // Run backing off movement
           if ((HOMING_DIRECTION[i] && motors[i].distanceToGo() < 0) || 
               (!HOMING_DIRECTION[i] && motors[i].distanceToGo() > 0)) {
-            motors[i].runSpeed();
+            updateSteppers();
           } else {
             // Backing off complete, start slow approach
-            Serial.print("Backing off completed for axis ");
-            Serial.println(i + 1);
           
             axisHomingState[i] = HomingState::SLOW_APPROACH;
           }
@@ -142,12 +131,10 @@
         
           // Set slow homing speed (direction based on configuration)
           motors[i].setSpeed(HOMING_DIRECTION[i] ? HOMING_SLOW_SPEED : -HOMING_SLOW_SPEED);
-          motors[i].runSpeed();
+          updateSteppers();
         
           // Check if endstop is hit - FIXED for NC wiring
                   if (digitalRead(ENDSTOP_PINS[i]) == HIGH) { // Endstop hit
-            Serial.print("Slow approach completed for axis ");
-            Serial.println(i + 1);
           
             // Stop motor
             motors[i].setSpeed(0);
@@ -175,13 +162,8 @@
       allHomingComplete = true;
     
       // Report homing results
-      Serial.println("Homing sequence completed");
       for (int i = 0; i < 6; i++) {
         if (HOMING_ENABLED[i]) {
-          Serial.print("Axis ");
-          Serial.print(i + 1);
-          Serial.print(": ");
-          Serial.println(axisHomingState[i] == HomingState::COMPLETED ? "SUCCESS" : "FAILED");
         }
       }
     }
@@ -194,13 +176,10 @@
       axisHomingState[i] = HomingState::IDLE;
     }
   
-    Serial.println("Homing stopped");
   }
 
   bool homeSingleAxis(int index) {
     if (!HOMING_ENABLED[index]) {
-      Serial.print("Homing not enabled for axis ");
-      Serial.println(index + 1);
       return false;
     }
   
@@ -208,8 +187,6 @@
     axisHomingState[index] = HomingState::FAST_APPROACH;
     homingStartTime[index] = millis();
   
-    Serial.print("Starting homing for axis ");
-    Serial.println(index + 1);
   
     // Continue until complete or error
     while (axisHomingState[index] != HomingState::COMPLETED && 
@@ -217,8 +194,6 @@
     
       // Check for timeout
       if (millis() - homingStartTime[index] > homingTimeout) {
-        Serial.print("Homing timeout for axis ");
-        Serial.println(index + 1);
         axisHomingState[index] = HomingState::ERROR;
         motors[index].setSpeed(0);
         return false;
@@ -229,12 +204,10 @@
         case HomingState::FAST_APPROACH:
           // Set fast homing speed (negative direction toward endstop)
            motors[index].setSpeed(HOMING_DIRECTION[index] ? HOMING_FAST_SPEED : -HOMING_FAST_SPEED);
-           motors[index].runSpeed();
+           updateSteppers();
         
           // Check if endstop is hit
           if (digitalRead(ENDSTOP_PINS[index]) == HIGH) { // Endstop hit
-            Serial.print("Fast approach completed for axis ");
-            Serial.println(index + 1);
           
             // Stop motor
             motors[index].setSpeed(0);
@@ -251,11 +224,9 @@
         case HomingState::BACKING_OFF:
           // Run backing off movement
           if (motors[index].distanceToGo() > 0) {
-            motors[index].runSpeed();
+            updateSteppers();
           } else {
             // Backing off complete, start slow approach
-            Serial.print("Backing off completed for axis ");
-            Serial.println(index + 1);
           
             axisHomingState[index] = HomingState::SLOW_APPROACH;
           }
@@ -264,12 +235,10 @@
         case HomingState::SLOW_APPROACH:
           // Set slow homing speed (negative direction toward endstop)
           motors[index].setSpeed(HOMING_DIRECTION[index] ? HOMING_SLOW_SPEED : -HOMING_SLOW_SPEED);
-          motors[index].runSpeed();
+          updateSteppers();
         
           // Check if endstop is hit
           if (digitalRead(ENDSTOP_PINS[index]) == HIGH) { // Endstop hit
-            Serial.print("Slow approach completed for axis ");
-            Serial.println(index + 1);
           
             // Stop motor
             motors[index].setSpeed(0);
@@ -284,8 +253,6 @@
         
         default:
           // Other states shouldn't occur here
-          Serial.print("Unexpected state for axis ");
-          Serial.println(index + 1);
           return false;
       }
     
@@ -309,7 +276,6 @@
     }
   }
   void moveToHomePose() {
-  Serial.println("🔁 Bewegung zur definierten Home-Pose...");
 
   for (int i = 0; i < 6; i++) {
     float deg = HOME_ANGLES[i];
@@ -322,8 +288,8 @@
   bool moving = true;
   while (moving) {
     moving = false;
+    updateSteppers();
     for (int i = 0; i < 6; i++) {
-      motors[i].run();
       if (motors[i].distanceToGo() != 0) {
         moving = true;
       }
@@ -336,13 +302,12 @@
   }
   calibrateAccelerometer();
   calibrateDistanceSensor();
-  Serial.println("✅ Home-Pose erreicht und als Startwert gesetzt, Gyro und Lidar kalibriert.");
 }
 
   // Return homing progress percentage (0-100)
   int getHomingProgress() {
-    int totalAxes = 0;
-    int completedAxes = 0;
+  int totalAxes = 0;
+  float completedAxes = 0.0;
   
     for (int i = 0; i < 6; i++) {
       if (HOMING_ENABLED[i]) {
@@ -362,6 +327,6 @@
   
     if (totalAxes == 0) return 100; // No axes to home
   
-    return (completedAxes * 100) / totalAxes;
+    return static_cast<int>((completedAxes * 100) / totalAxes);
   }
 
