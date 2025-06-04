@@ -65,7 +65,6 @@ float updateKalmanFilter(float* kalman, float measurement, float processNoise, f
 
 // Function to calibrate the accelerometer
 void calibrateAccelerometer() {
-  Serial.println("Calibrating accelerometer... Keep robot stationary!");
   
   // Take multiple readings and average them
   const int numSamples = 50;
@@ -87,16 +86,10 @@ void calibrateAccelerometer() {
   accelOffsetY = sumY / numSamples;
   accelOffsetZ = (sumZ / numSamples) - 9.8; // Remove gravity
   
-  Serial.println("Accelerometer calibration complete!");
-  Serial.print("Offsets - X: "); Serial.print(accelOffsetX);
-  Serial.print(" Y: "); Serial.print(accelOffsetY);
-  Serial.print(" Z: "); Serial.println(accelOffsetZ);
 }
 
 // Function to calibrate distance sensor
 void calibrateDistanceSensor() {
-  Serial.println("Calibrating VL53L0X distance sensor...");
-  Serial.println("Place a flat surface under the sensor");
   delay(3000); // Give user time to position
   
   // Take multiple readings and average them
@@ -119,10 +112,7 @@ void calibrateDistanceSensor() {
     float avgDist = sumDist / validReadings;
     distanceOffset = avgDist - 341.4; // Assuming 10cm (100mm) reference
     
-    Serial.println("Distance sensor calibration complete!");
-    Serial.print("Offset: "); Serial.print(distanceOffset); Serial.println(" mm");
   } else {
-    Serial.println("Failed to calibrate distance sensor - no valid readings");
   }
 }
 
@@ -177,16 +167,6 @@ float getFilteredDistance() {
   // Debug output - print every 500ms to avoid flooding serial
   static unsigned long lastDebugTime = 0;
   if (millis() - lastDebugTime > 500) {
-    Serial.print("[");
-    Serial.print(millis());
-    Serial.print("] Gripper Debug - Pot Value: ");
-    Serial.print(potValue);
-    Serial.print(", Mapped Servo Pos: ");
-    Serial.print(servoPos);
-    Serial.print(", Min/Max: ");
-    Serial.print(SERVO_MIN_POS);
-    Serial.print("/");
-    Serial.println(SERVO_MAX_POS);
     lastDebugTime = millis();
   }
   
@@ -194,9 +174,7 @@ float getFilteredDistance() {
   gripper.write(servoPos);
 }
 void initializeSystem() {
-  Serial.begin(115200);
   delay(500);
-  Serial.println("🟢 Initialisierung startet...");
 
   // Initialize I2C for sensors
   Wire.begin();
@@ -219,32 +197,25 @@ void initializeSystem() {
   pinMode(BUTTON_CONFIRM, INPUT_PULLUP);
   pinMode(SERVO_POTTY_PIN, INPUT);
   // Initialize sensors with proper error handling
-  Serial.println("Initializing ADXL345 accelerometer...");
   bool adxlSuccess = adxl.begin();
   
   if (adxlSuccess) {
-    Serial.println("✅ ADXL345 accelerometer initialized");
     adxl.setRange(ADXL345_RANGE_4_G); // Set range to 4G for better sensitivity
     adxl.setDataRate(ADXL345_DATARATE_100_HZ); // 100Hz data rate
     
     // Run calibration
     
   } else {
-    Serial.println("❌ Failed to initialize ADXL345 accelerometer");
   }
   
-  Serial.println("Initializing VL53L0X distance sensor...");
   bool loxSuccess = lox.begin();
   
   if (loxSuccess) {
-    Serial.println("✅ VL53L0X distance sensor initialized");
     lox.startRangeContinuous();
     
     // Run calibration
     
   } else {
-    Serial.println("❌ Failed to initialize VL53L0X sensor");
   }
   
-  Serial.println("✅ Initialisierung abgeschlossen.");
 }
